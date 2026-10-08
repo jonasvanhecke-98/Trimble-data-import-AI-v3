@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Trimble Data Import AI — V6 Gratis</title>
+  <link rel="stylesheet" href="./style.css">
+  <script defer src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script defer src="./analysis.js"></script>
+  <script defer src="./visual.js"></script>
+  <script defer src="./visual-ui.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Trimble Connect · GitHub Pages · Gratis</div>
+    <h1>Trimble Data Import AI <span class="version">V6</span></h1>
+    <p>Tekst én kleur gebruiken om vrachten uit je PDF aan IFC-objecten te koppelen — rechtstreeks vanuit je Trimble-project.</p>
+  </header>
+  <section class="card">
+    <div class="heading"><span class="number">1</span><h2>Bestanden uit het actieve Trimble-project</h2></div>
+    <p id="status" class="status" role="status" aria-live="polite">Trimble-verbinding voorbereiden…</p>
+    <div class="toolbar">
+      <div><span class="micro">Actief Trimble-project</span><strong id="project-name">Wordt opgehaald…</strong></div>
+      <button id="refresh" type="button">Opnieuw laden</button>
+    </div>
+    <div id="breadcrumbs" class="breadcrumbs"></div>
+    <div id="files" class="file-list"><p class="placeholder">Projectbestanden laden…</p></div>
+    <div class="selection">
+      <div><span class="micro">Geselecteerde IFC</span><strong id="chosen-ifc">Geen IFC geselecteerd</strong></div>
+      <div><span class="micro">Geselecteerde PDF</span><strong id="chosen-pdf">Geen PDF geselecteerd</strong></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="heading"><span class="number">2</span><h2>Analyseer tekst en kleuren</h2></div>
+    <p class="muted">De bestanden worden tijdelijk in je browser gelezen. Tekstregels en IFC-eigenschappen worden onderzocht; daarna kunnen we de gekleurde vloerplaten met de PDF-legenda vergelijken.</p>
+    <div class="toolbar">
+      <button id="analyze" disabled type="button">Analyseer IFC + PDF</button>
+      <button id="export" disabled type="button" class="secondary">Download CSV voor Excel</button>
+    </div>
+    <p id="analysis-status" class="status" role="status" aria-live="polite">Kies eerst IFC en PDF.</p>
+    <div id="stats" class="stats" hidden></div>
+    <details id="analysis-details" class="result-diagnostics" hidden>
+      <summary>Toon herkenningsdiagnose (IFC-eigenschappen en PDF-tekst)</summary>
+    </details>
+  </section>
+
+  <section class="card" id="visual-section" hidden>
+    <div class="heading"><span class="number">3</span><h2>Kleurlegenda en vloerplaten</h2></div>
+    <p>Je ziet de echte PDF. De app probeert kleurstalen uit de legenda te herkennen. <strong>Controleer altijd of de kleuren bij de juiste Cargo horen.</strong></p>
+    <p id="visual-status" class="status">PDF-weergave voorbereiden…</p>
+    <div class="toolbar">
+      <label class="inline-label">PDF-pagina
+        <select id="visual-page"></select>
+      </label>
+      <button id="detect-legend" type="button" class="secondary">Herken kleurenlegenda opnieuw</button>
+    </div>
+    <div class="visual-layout">
+      <div class="preview-column">
+        <div class="pdf-canvas-wrap" id="pdf-wrap">
+          <canvas id="pdf-canvas" aria-label="PDF-tekening"></canvas>
+          <canvas id="pdf-overlay" aria-label="Klik om legenda of vloerplan aan te duiden"></canvas>
+        </div>
+        <p class="micro">Klikken op de tekening werkt in de aangegeven modus. Deze afbeelding wordt niet naar GitHub verzonden.</p>
+      </div>
+      <div class="palette-column">
+        <h3>Legenda — Cargo / Vracht</h3>
+        <p class="micro">Bij een kleurentabel van boven naar beneden worden de kleurstalen voorlopig aan Cargo 1, 2, 3... gekoppeld. Controleer de volgorde tegen de PDF.</p>
+        <div id="legend-rows" class="legend-rows"></div>
+        <div class="toolbar compact">
+          <label class="inline-label">Cargo wijzigen
+            <select id="pick-cargo"></select>
+          </label>
+          <button id="pick-swatch" type="button" class="secondary">Kies kleur op PDF</button>
+        </div>
+        <label class="confirm-label"><input id="legend-verified" type="checkbox"> Ik heb de kleuren met de legenda in mijn PDF vergeleken.</label>
+        <div class="hint" id="legend-hint"></div>
+      </div>
+    </div>
+    <hr>
+    <h3>Vloerplaten koppelen via hun positie</h3>
+    <p>Wanneer de PDF geen leesbare elementnummers bevat, kunnen we de positie van vloerplaten in de IFC gebruiken. Klik het <strong>midden van de bovenste vloerplaat</strong> en daarna het <strong>midden van de onderste vloerplaat</strong> in de PDF. Controleer de volgorde in het model.</p>
+    <div class="toolbar">
+      <label class="inline-label">IFC-objecttype
+        <select id="visual-type"></select>
+      </label>
+      <button id="calibrate" type="button" class="secondary">Markeer bovenste + onderste plaat (2 klikken)</button>
+      <button id="flip" type="button" class="secondary">Draai modelvolgorde om</button>
+    </div>
+    <div id="calibration-message" class="hint">Nog niet gekalibreerd.</div>
+    <div class="toolbar">
+      <button id="create-visual-rows" type="button" disabled>Maak visuele vrachtvoorstellen</button>
+      <button id="add-missing" type="button" class="secondary" disabled>Toon overige vloerplaten voor handmatige toewijzing</button>
+      <button id="clear-visual-rows" type="button" class="secondary" disabled>Wis visuele voorstellen</button>
+    </div>
+    <p class="micro">De voorgestelde GUID-koppeling op basis van IFC-posities is een <strong>benadering</strong>, geen volledige geometrische verificatie. Daarom wordt geen enkele visuele toewijzing automatisch bevestigd.</p>
+  </section>
+
+  <section class="card">
+    <div class="heading"><span class="number">4</span><h2>Controleer de vrachttoewijzingen</h2></div>
+    <p class="muted">Bevestig alleen regels waarbij de juiste GUID en vracht zijn gecontroleerd. Bij twijfel laat je de status op <em>Controle nodig</em> staan.</p>
+    <div id="review" class="review" hidden>
+      <div class="toolbar">
+        <strong>Matchvoorstellen</strong>
+        <button id="confirm-unique" type="button" class="secondary">Bevestig unieke tekstmatches</button>
+      </div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>PDF / identificatie</th><th>IFC-element</th><th>GUID</th><th>Vracht</th><th>Pagina</th><th>Methode</th><th>Beslissing</th></tr></thead>
+        <tbody id="match-rows"></tbody>
+      </table></div>
+      <div id="unmatched" class="muted"></div>
+    </div>
+    <p id="no-results" class="hint">Er zijn nog geen matchvoorstellen.</p>
+    <p class="micro"><strong>Opslaan:</strong> klik bovenaan op <em>Download CSV voor Excel</em>. De resultaten worden niet vanzelf bewaard wanneer je het venster sluit.</p>
+  </section>
+
+  <section class="card">
+    <div class="heading"><span class="number">5</span><h2>Custom Property Sets in Trimble</h2></div>
+    <p>Doel: <strong>ALTEZ LOGISTICS → Vracht</strong>. Echt terugschrijven staat nog uit. Eerst moet de Trimble Property Set API met jouw project en bevestigde GUID's veilig getest worden.</p>
+    <button type="button" disabled>Schrijf naar Trimble — nog niet beschikbaar</button>
+  </section>
+  <details class="card diagnostic">
+    <summary>Diagnose bij fouten</summary><pre id="diagnose" aria-live="polite"></pre>
+    <p class="micro">Geen tokens of geheime download-URL's in de diagnose.</p>
+  </details>
+  <footer>Gratis tekst- en kleurherkenning · GitHub Pages · Geen OpenAI/Gemini-sleutel · Geen Render</footer>
+</main>
+</body>
+</html>

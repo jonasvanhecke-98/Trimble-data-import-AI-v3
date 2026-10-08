@@ -1,0 +1,11 @@
+{
+  "url": "https://jonasvanhecke-98.github.io/Trimble-data-import-AI-v2/",
+  "title": "Trimble Data Import AI",
+  "icon": "https://jonasvanhecke-98.github.io/Trimble-data-import-AI-v2/icon.svg",
+  "description": "IFC en PDF uit het actieve Trimble-project selecteren en later analyseren.",
+  "extensionType": [
+    "project",
+    "3dviewer"
+  ],
+  "enabled": true
+}
