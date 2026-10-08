@@ -208,7 +208,7 @@ function matchTokens(input,index) {
 }
 function detectVrachten(text){
   const result=[];
-  const pattern=/\b(?:vracht(?:en)?|vr(?:acht)?\.?|truck|lading|load|transport(?:nummer|nr\.?)?)\s*(?:nr\.?|nummer|no\.?|#)?\s*[:#\-\u2013]?\s*0*(\d{1,3})\b/gi;
+  const pattern=/\b(?:vracht(?:en)?|vr(?:acht)?\.?|cargo|truck|lading|load|transport(?:nummer|nr\.?)?)\s*(?:nr\.?|nummer|no\.?|#)?\s*[:#\-\u2013]?\s*0*(\d{1,3})\b/gi;
   for(const m of String(text).matchAll(pattern)){
     const n=Number(m[1]);
     if(n>=1 && n<=999)result.push({vracht:"Vracht "+String(n).padStart(2,"0"), offset:m.index});
@@ -249,7 +249,7 @@ function analyzeDocument(pages,ifc){
       for(let pi=0;pi<parts.length;pi++){
         // Start uitsluitend op een vrachtlabel om geen foutieve kolompositie
         // toe te kennen als twee vrachtlabels op één PDF-regel staan.
-        if(!/^(?:vracht|vr\.?|truck|load|lading|transport)/i.test(parts[pi].text.trim()))continue;
+        if(!/^(?:vracht|vr\.?|cargo|truck|load|lading|transport)/i.test(parts[pi].text.trim()))continue;
         for(let windowSize=1;windowSize<=Math.min(4,parts.length-pi);windowSize++){
           const fragment=parts.slice(pi,pi+windowSize).map(x=>x.text).join(" ");
           const labels=detectVrachten(fragment);
@@ -323,6 +323,9 @@ function analyzeDocument(pages,ifc){
           guid:item.element.guid,
           vracht:chosen?.vracht||"",
           page:page.page,
+          pdfX:Number(item.x||0),
+          pdfY:Number(item.y||0),
+          pdfSource:"text",
           confidence,
           method:!chosen?"NO_VRACHT_CONTEXT":!unique?"DUPLICATE_MARK":method,
           source:item.alias.origin,
@@ -370,7 +373,13 @@ function analyzeDocument(pages,ifc){
 async function extractPdfPages(buffer, library){
   if(!library?.getDocument)throw new Error("PDF.js kon niet geladen worden. Controleer toegang tot cdnjs.cloudflare.com.");
   library.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  const doc=await library.getDocument({data:new Uint8Array(buffer),isEvalSupported:false}).promise;
+  // PDF.js may transfer/detach the input buffer to its worker.
+  // Keep the original for visual analysis and give this call its own copy.
+  if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0)
+    throw new Error("PDF-inhoud ontbreekt: start de analyse opnieuw.");
+  const doc=await library.getDocument({
+    data:new Uint8Array(buffer.slice(0)),isEvalSupported:false
+  }).promise;
   const pages=[];
   try{
     for(let pageNo=1;pageNo<=doc.numPages;pageNo++){

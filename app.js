@@ -12,6 +12,8 @@ const state = {
   token: null,
   path: [],
   selected: { ifc: null, pdf: null },
+  viewerModels: [],
+  activeModel: null,
   analysisRows: [],
   diagnostic: null,
   analyzing: false,
@@ -150,7 +152,7 @@ function renderFiles(items) {
   const usable = items
     .filter(i => {
       const name = itemName(i);
-      return Boolean(itemId(i)) && (isFolder(i) || /\.(ifc|pdf)$/i.test(name));
+      return Boolean(itemId(i)) && (isFolder(i) || /\.pdf$/i.test(name));
     })
     .sort((a,b)=> Number(isFolder(b)) - Number(isFolder(a)) ||
       itemName(a).localeCompare(itemName(b), "nl"));
@@ -163,14 +165,14 @@ function renderFiles(items) {
   }
   for (const item of usable) {
     const folder = isFolder(item), name = itemName(item);
-    const kind = /\.ifc$/i.test(name) ? "ifc" : "pdf";
+    const kind = "pdf";
     const row = document.createElement("div");
     row.className = "file-row";
     const label = document.createElement("span");
     label.className = "name";
-    label.textContent = (folder ? "📁 " : kind === "ifc" ? "🏗️ " : "📄 ") + name;
+    label.textContent = (folder ? "📁 " : "📄 ") + name;
     const button = document.createElement("button");
-    button.textContent = folder ? "Open map" : kind === "ifc" ? "Kies IFC" : "Kies PDF";
+    button.textContent = folder ? "Open map" : "Kies PDF";
     button.onclick = () => {
       if (folder) openFolder(itemId(item),name);
       else {
@@ -200,7 +202,7 @@ async function openFolder(id, name="Map", existingIndex=-1) {
     else state.path.push({id,name});
     renderPath();
     renderFiles(items);
-    status("Kies een IFC en een PDF uit dit project", "ok");
+    status("Kies het viewer-model en een PDF uit dit project", "ok");
     note(`${items.length} items geladen vanuit ${existingIndex === 0 ? "projectroot" : name}.`);
   } catch (err) {
     $("files").textContent = "Bestanden ophalen mislukt: " + err.message;
@@ -253,7 +255,9 @@ async function start() {
     state.api = await window.TrimbleConnectWorkspace.connect(window.parent, workspaceEvent, 30000);
     state.project = await state.api.project.getProject();
     state.selected={ifc:null,pdf:null};
-    $("chosen-ifc").textContent="Geen IFC geselecteerd";
+    state.viewerModels=[];
+    state.activeModel=null;
+    $("chosen-ifc").textContent="Geen viewer-model geselecteerd";
     $("chosen-pdf").textContent="Geen PDF geselecteerd";
     clearAnalysis();
     updateAnalyzeButton();
@@ -261,6 +265,8 @@ async function start() {
     if (!state.project?.id) throw new Error("Geen project-ID ontvangen vanuit de 3D-viewer.");
     $("project-name").textContent = state.project.name || "(naam niet beschikbaar)";
     note("Actief Trimble-project: " + (state.project.name || "naamloos"));
+    $("refresh-models").disabled=false;
+    await refreshViewerModels();
     // Verbinding + selectie zijn één doorlopende stap. Geen regioveld of folder-ID nodig.
     const reply = await state.api.extension.requestPermission("accesstoken");
     const token = safeToken(reply);
@@ -284,10 +290,129 @@ async function start() {
     $("refresh").disabled = false;
   }
 }
+
+// The loaded 3D viewer supplies the IFC model and version. Project browser supplies only PDF.
+async function refreshViewerModels(){
+  const dropdown=$("viewer-model");
+  dropdown.replaceChildren();
+  dropdown.disabled=true;
+  state.viewerModels=[];
+  const previous=state.activeModel?.versionId||"";
+  try{
+    $("viewer-model-status").textContent="IFC-modellen in de 3D-viewer ophalen…";
+    if(!window.TrimbleViewerModel)throw new Error("viewer-model.js is niet geladen.");
+    const models=await window.TrimbleViewerModel.getLoadedIfcModels(state.api);
+    state.viewerModels=models;
+    if(!models.length){
+      const option=document.createElement("option");
+      option.value="";
+      option.textContent="Geen IFC geladen in de 3D-viewer";
+      dropdown.append(option);
+      state.activeModel=null;
+      state.selected.ifc=null;
+      $("chosen-ifc").textContent="Geen geladen IFC-model";
+      $("viewer-model-status").textContent=
+        "Laad een IFC in de 3D-viewer, klik daarna op 'Vernieuw modellen'.";
+      clearAnalysis();updateAnalyzeButton();
+      return;
+    }
+    for(const model of models){
+      const option=document.createElement("option");
+      option.value=model.versionId;
+      option.textContent=model.name+(model.isLatestVersion===false?" (oudere versie)":"");
+      dropdown.append(option);
+    }
+    dropdown.disabled=false;
+    const chosen=models.find(m=>m.versionId===previous)||models[0];
+    dropdown.value=chosen.versionId;
+    await chooseViewerModel(chosen.versionId);
+    note(`${models.length} geladen IFC-modellen gevonden in 3D-viewer.`);
+  }catch(err){
+    $("viewer-model-status").textContent="Kan modellen niet ophalen: "+err.message;
+    note("Viewer modellen: "+err.message);
+    state.activeModel=null;state.selected.ifc=null;
+    $("chosen-ifc").textContent="Viewer-model niet beschikbaar";
+    clearAnalysis();updateAnalyzeButton();
+  }
+}
+async function chooseViewerModel(versionId){
+  const model=state.viewerModels.find(m=>m.versionId===versionId);
+  if(!model)return;
+  state.activeModel=model;
+  state.selected.ifc=null;
+  clearAnalysis();updateAnalyzeButton();
+  $("chosen-ifc").textContent=model.name+" (viewer-versie)";
+  $("viewer-model-status").textContent="Bronbestand voor dit geladen model vaststellen…";
+  try{
+    const selectedFile=await window.TrimbleViewerModel.sourceFile(state.api,model);
+    // Protect against accidental current-vs-old version mismatch.
+    if(selectedFile.versionId!==model.versionId)throw new Error("De IFC-versie klopt niet met de viewer.");
+    state.selected.ifc=selectedFile;
+    $("viewer-model-status").textContent="Model geladen: "+model.name+
+      (selectedFile.warning ? " (bestandsmetadata niet volledig bevestigd)" : "");
+    if(selectedFile.warning)note("Viewer modelbron: "+selectedFile.warning);
+    updateAnalyzeButton();
+    if(state.selected.pdf)analysisStatus("Viewer-model en PDF geselecteerd. Klik op Analyseer.","ok");
+  }catch(err){
+    state.selected.ifc=null;
+    $("viewer-model-status").textContent="Kon bronbestand niet bepalen: "+err.message;
+    analysisStatus("Selecteer een ander viewer-model of vernieuw de modelweergave.","error");
+    note("Modelbron: "+err.message);
+  }
+}
+
+async function inspectMatchFromPdf(row){
+  const index=state.analysisRows.findIndex(r=>
+    r.guid===row.guid && (r.vracht===row.vracht || row.method==="MANUAL_REQUIRED"));
+  if(index<0){
+    analysisStatus("De geselecteerde PDF-markering is niet meer in de controletabel te vinden.","error");
+    return;
+  }
+  const tr=$("match-rows").children[index];
+  const button=tr?.querySelector("td.visual-check button");
+  if(button)await focusMatch(state.analysisRows[index],tr,button);
+}
+
+async function focusMatch(row,tr,button){
+  if(!state.activeModel){
+    analysisStatus("Er is geen IFC-model geselecteerd in de 3D-viewer.","error");
+    return;
+  }
+  if(!row.guid){
+    analysisStatus("Deze regel heeft nog geen gekoppelde GUID.","error");
+    return;
+  }
+  const oldText=button.textContent;
+  button.disabled=true;button.textContent="Selecteren…";
+  try{
+    const result=await window.TrimbleViewerModel.locateObject(state.api,state.activeModel,row.guid);
+    document.querySelectorAll("#match-rows tr.selected-match").forEach(e=>e.classList.remove("selected-match"));
+    tr.classList.add("selected-match");
+    let pdfHint="";
+    if(window.TrimbleVisualUI?.highlightMatch){
+      try{
+        pdfHint=await window.TrimbleVisualUI.highlightMatch(row);
+      }catch(e){
+        pdfHint="PDF-markering niet beschikbaar: "+e.message;
+      }
+    }
+    const message="GUID geselecteerd in Trimble 3D-viewer."+
+      (result.fitted?" Camera ingezoomd.":"")+
+      (pdfHint?" "+pdfHint:"")+(result.warning?" "+result.warning:"");
+    analysisStatus(message,"ok");
+  }catch(err){
+    analysisStatus("Kan object niet tonen in 3D: "+err.message,"error");
+    note("Bekijk 3D: "+err.message);
+  }finally{button.disabled=false;button.textContent=oldText;}
+}
+$("viewer-model").addEventListener("change",event=>chooseViewerModel(event.target.value));
+$("refresh-models").addEventListener("click",refreshViewerModels);
+
 $("refresh").addEventListener("click", () => {
   // Gebruik na verbinding het bestaande (actieve) project; token kan door Trimble vernieuwd worden.
   if (state.project && state.token) {
     state.path = [];
+    refreshViewerModels();
     loadCurrentProjectFiles();
   } else start();
 });
@@ -407,7 +532,22 @@ function renderReview() {
     }
     select.value=row.status;
     select.addEventListener("change",()=>row.status=select.value);
-    td.append(select);tr.append(td);tbody.append(tr);
+    td.append(select);tr.append(td);
+    const visualTd=document.createElement("td");
+    visualTd.className="visual-check";
+    if (row.guid) {
+      const focusButton=document.createElement("button");
+      focusButton.type="button";
+      focusButton.className="secondary";
+      focusButton.textContent="Bekijk in 3D + PDF";
+      focusButton.title="Selecteer dit object in Trimble en markeer de bronpositie op de PDF.";
+      focusButton.onclick=()=>focusMatch(row,tr,focusButton);
+      visualTd.append(focusButton);
+    } else {
+      visualTd.textContent="Geen GUID gekoppeld";
+    }
+    tr.append(visualTd);
+    tbody.append(tr);
   }
   $("review").hidden=false;
   $("export").disabled=false;
@@ -463,7 +603,10 @@ async function analyzeSelected() {
   $("review").hidden=true;
   $("stats").hidden=true;
   try {
-    analysisStatus("IFC downloaden uit Trimble Connect…");
+    if (!state.activeModel || state.selected.ifc?.versionId!==state.activeModel.versionId) {
+      throw new Error("De IFC-keuze komt niet overeen met het geladen viewer-model. Vernieuw de modellenlijst.");
+    }
+    analysisStatus("IFC-bron van geladen 3D-model downloaden…");
     const ifcBuffer=await downloadFromTrimble(state.selected.ifc);
     analysisStatus("PDF downloaden uit Trimble Connect…");
     const pdfBuffer=await downloadFromTrimble(state.selected.pdf);
@@ -498,7 +641,8 @@ async function analyzeSelected() {
     if (window.TrimbleVisualUI?.openAnalysis) {
       await window.TrimbleVisualUI.openAnalysis({
         pdfBuffer,ifcBuffer,ifc,
-        onRows:onVisualRows
+        onRows:onVisualRows,
+        onInspect:inspectMatchFromPdf
       });
     } else {
       note("Visuele module niet gevonden: visual.js of visual-ui.js ontbreekt.");

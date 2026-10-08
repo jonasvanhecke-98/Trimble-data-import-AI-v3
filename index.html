@@ -3,45 +3,57 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Trimble Data Import AI — V6 Gratis</title>
+  <title>Trimble Data Import AI — V7 Viewer + PDF</title>
   <link rel="stylesheet" href="./style.css">
   <script defer src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script defer src="./analysis.js"></script>
   <script defer src="./visual.js"></script>
   <script defer src="./visual-ui.js"></script>
+  <script defer src="./viewer-model.js"></script>
   <script defer src="./app.js"></script>
 </head>
 <body>
 <main>
   <header>
     <div class="eyebrow">Trimble Connect · GitHub Pages · Gratis</div>
-    <h1>Trimble Data Import AI <span class="version">V6</span></h1>
-    <p>Tekst én kleur gebruiken om vrachten uit je PDF aan IFC-objecten te koppelen — rechtstreeks vanuit je Trimble-project.</p>
+    <h1>Trimble Data Import AI <span class="version">V7</span></h1>
+    <p>Kies het IFC-model dat al in je 3D-viewer geladen is. Selecteer alleen de vrachtplanning-PDF uit Trimble. Bekijk daarna de match in het model én op de tekening.</p>
   </header>
   <section class="card">
-    <div class="heading"><span class="number">1</span><h2>Bestanden uit het actieve Trimble-project</h2></div>
+    <div class="heading"><span class="number">1</span><h2>Actief viewer-model en vrachtplanning</h2></div>
     <p id="status" class="status" role="status" aria-live="polite">Trimble-verbinding voorbereiden…</p>
     <div class="toolbar">
       <div><span class="micro">Actief Trimble-project</span><strong id="project-name">Wordt opgehaald…</strong></div>
       <button id="refresh" type="button">Opnieuw laden</button>
     </div>
+    <div class="viewer-model-panel">
+      <label for="viewer-model"><strong>IFC-model dat in de 3D-viewer geladen is</strong></label>
+      <div class="toolbar">
+        <select id="viewer-model" disabled aria-label="Kies geladen IFC-model">
+          <option value="">Viewer-modellen ophalen…</option>
+        </select>
+        <button id="refresh-models" type="button" class="secondary" disabled>Vernieuw modellen</button>
+      </div>
+      <p class="micro" id="viewer-model-status">Open een IFC-model in de Trimble 3D-viewer.</p>
+    </div>
+    <h3>Selecteer de vrachtplanning-PDF uit dit project</h3>
     <div id="breadcrumbs" class="breadcrumbs"></div>
-    <div id="files" class="file-list"><p class="placeholder">Projectbestanden laden…</p></div>
+    <div id="files" class="file-list"><p class="placeholder">PDF-bestanden laden…</p></div>
     <div class="selection">
-      <div><span class="micro">Geselecteerde IFC</span><strong id="chosen-ifc">Geen IFC geselecteerd</strong></div>
+      <div><span class="micro">Actief IFC-model uit 3D-viewer</span><strong id="chosen-ifc">Geen viewer-model geselecteerd</strong></div>
       <div><span class="micro">Geselecteerde PDF</span><strong id="chosen-pdf">Geen PDF geselecteerd</strong></div>
     </div>
   </section>
 
   <section class="card">
     <div class="heading"><span class="number">2</span><h2>Analyseer tekst en kleuren</h2></div>
-    <p class="muted">De bestanden worden tijdelijk in je browser gelezen. Tekstregels en IFC-eigenschappen worden onderzocht; daarna kunnen we de gekleurde vloerplaten met de PDF-legenda vergelijken.</p>
+    <p class="muted">Het gekozen geladen viewer-model bepaalt welke IFC en versie worden gebruikt. Alleen de vrachtplanning selecteer je in de bestandenbrowser. Daarna vergelijken we IFC-eigenschappen, tekst, posities en kleuren uit de PDF.</p>
     <div class="toolbar">
-      <button id="analyze" disabled type="button">Analyseer IFC + PDF</button>
+      <button id="analyze" disabled type="button">Analyseer viewer-model + PDF</button>
       <button id="export" disabled type="button" class="secondary">Download CSV voor Excel</button>
     </div>
-    <p id="analysis-status" class="status" role="status" aria-live="polite">Kies eerst IFC en PDF.</p>
+    <p id="analysis-status" class="status" role="status" aria-live="polite">Kies een geladen viewer-model en een PDF.</p>
     <div id="stats" class="stats" hidden></div>
     <details id="analysis-details" class="result-diagnostics" hidden>
       <summary>Toon herkenningsdiagnose (IFC-eigenschappen en PDF-tekst)</summary>
@@ -101,14 +113,14 @@
 
   <section class="card">
     <div class="heading"><span class="number">4</span><h2>Controleer de vrachttoewijzingen</h2></div>
-    <p class="muted">Bevestig alleen regels waarbij de juiste GUID en vracht zijn gecontroleerd. Bij twijfel laat je de status op <em>Controle nodig</em> staan.</p>
+    <p class="muted">Klik bij een kandidaat op <strong>Bekijk in 3D + PDF</strong> om het object in de actieve 3D-viewer te selecteren, erop in te zoomen en de bijbehorende PDF-positie aan te duiden (als die bekend is). Bevestig alleen regels waarbij de juiste GUID en vracht zijn gecontroleerd. Bij twijfel laat je de status op <em>Controle nodig</em> staan.</p>
     <div id="review" class="review" hidden>
       <div class="toolbar">
         <strong>Matchvoorstellen</strong>
         <button id="confirm-unique" type="button" class="secondary">Bevestig unieke tekstmatches</button>
       </div>
       <div class="table-scroll"><table>
-        <thead><tr><th>PDF / identificatie</th><th>IFC-element</th><th>GUID</th><th>Vracht</th><th>Pagina</th><th>Methode</th><th>Beslissing</th></tr></thead>
+        <thead><tr><th>PDF / identificatie</th><th>IFC-element</th><th>GUID</th><th>Vracht</th><th>Pagina</th><th>Methode</th><th>Beslissing</th><th>Visuele controle</th></tr></thead>
         <tbody id="match-rows"></tbody>
       </table></div>
       <div id="unmatched" class="muted"></div>
@@ -126,7 +138,7 @@
     <summary>Diagnose bij fouten</summary><pre id="diagnose" aria-live="polite"></pre>
     <p class="micro">Geen tokens of geheime download-URL's in de diagnose.</p>
   </details>
-  <footer>Gratis tekst- en kleurherkenning · GitHub Pages · Geen OpenAI/Gemini-sleutel · Geen Render</footer>
+  <footer>Viewer-model + PDF + gratis tekst- en kleurherkenning · GitHub Pages · Geen OpenAI/Gemini-sleutel · Geen Render</footer>
 </main>
 </body>
 </html>

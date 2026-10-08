@@ -254,6 +254,7 @@ function proposeColorAssignments(image,legend,geometry,calibration,options={}){
       status:"needs_review",source:"PDF kleur + IFC plaatsingspositie",
       evidence:`Kleur ${match.color}; pixel (${Math.round(pos.x)}, ${Math.round(pos.y)}); `+
         `IFC Y=${Math.round(el.y)}; controleer deze ligging handmatig.`,
+      pdfPixelX:pos.x,pdfPixelY:pos.y,pdfSource:"color",
       visualCargo:match.cargo
     });
   }

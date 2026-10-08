@@ -8,7 +8,7 @@ const V=()=>scope.TrimbleVisual;
 const ctx={
   pdf:null,ifc:null,positions:[],image:null,canvas:null,overlay:null,
   page:1,legend:[],calibration:[],mode:"",reversed:false,
-  callbacks:null,ready:false,pickingCargo:1,lastRows:[]
+  callbacks:null,ready:false,pickingCargo:1,lastRows:[],highlight:null,viewport:null
 };
 const defaultColors=[
   "#ff0000","#ffff00","#00ff00","#00ffff","#0000ff","#ff00ff",
@@ -117,6 +117,28 @@ function renderMarkers(){
     c.lineTo(ctx.calibration[1].x,ctx.calibration[1].y);
     c.stroke();c.setLineDash([]);
   }
+  // Candidate markers provide a visual map between PDF and 3D elements.
+  if(ctx.lastRows.length){
+    const visible=ctx.lastRows.filter(r=>r.page===ctx.page &&
+      Number.isFinite(r.pdfPixelX)&&Number.isFinite(r.pdfPixelY));
+    c.save();
+    for(const row of visible.slice(0,700)){
+      c.beginPath();
+      c.arc(row.pdfPixelX,row.pdfPixelY,Math.max(3,canvas.width/280),0,Math.PI*2);
+      c.lineWidth=1.5;c.strokeStyle="#e05e15";c.fillStyle="#e05e1540";
+      c.fill();c.stroke();
+    }
+    c.restore();
+  }
+  if(ctx.highlight?.page===ctx.page && Number.isFinite(ctx.highlight.x)){
+    const x=ctx.highlight.x,y=ctx.highlight.y;
+    c.save();c.strokeStyle="#126bca";c.fillStyle="#126bca40";
+    c.lineWidth=Math.max(3,canvas.width/370);
+    c.beginPath();c.arc(x,y,Math.max(12,canvas.width/100),0,Math.PI*2);
+    c.fill();c.stroke();
+    c.beginPath();c.moveTo(x-23,y);c.lineTo(x+23,y);
+    c.moveTo(x,y-23);c.lineTo(x,y+23);c.stroke();c.restore();
+  }
   ctx.calibration.forEach((pt,i)=>{
     c.beginPath();c.arc(pt.x,pt.y,Math.max(8,canvas.width/155),0,Math.PI*2);
     c.fillStyle="#fff";c.fill();
@@ -160,11 +182,22 @@ function clickPoint(event){
         "Controleer de legenda en klik op 'Maak visuele vrachtvoorstellen'.";
       readyToMap();
     }
+  } else if(!ctx.mode && ctx.lastRows.length) {
+    // Click a nearby candidate marker to inspect the same GUID in Trimble 3D.
+    let nearest=null,distance=Infinity;
+    for(const row of ctx.lastRows){
+      if(row.page!==ctx.page || !Number.isFinite(row.pdfPixelX))continue;
+      const d=Math.hypot(x-row.pdfPixelX,y-row.pdfPixelY);
+      if(d<distance){nearest=row;distance=d;}
+    }
+    if(nearest && distance<Math.max(16,ctx.overlay.width/80)){
+      ctx.callbacks?.onInspect?.(nearest);
+    }
   }
 }
-async function showPage(pageNo){
+async function showPage(pageNo,{preserveMatches=false}={}){
   if(!ctx.pdf)return;
-  invalidateVisualRows();
+  if(!preserveMatches)invalidateVisualRows();
   ctx.ready=false;
   ctx.page=pageNo;
   visualStatus("PDF-pagina "+pageNo+" tekenen en kleuranalyse voorbereiden…");
@@ -173,6 +206,7 @@ async function showPage(pageNo){
   // Canvas size capped so very large A0 technical drawings remain responsive.
   const scale=Math.min(2.1,Math.max(.40,1650/Math.max(base.width,base.height)));
   const view=page.getViewport({scale});
+  ctx.viewport=view;
   const canvas=$("pdf-canvas");
   canvas.width=Math.floor(view.width);
   canvas.height=Math.floor(view.height);
@@ -193,10 +227,10 @@ async function showPage(pageNo){
   ctx.ready=true;
   readyToMap();
 }
-async function openAnalysis({pdfBuffer,ifcBuffer,ifc,onRows,onStatus}){
+async function openAnalysis({pdfBuffer,ifcBuffer,ifc,onRows,onStatus,onInspect}){
   reset();
   if(!scope.pdfjsLib?.getDocument)throw new Error("PDF.js is niet geladen.");
-  ctx.callbacks={onRows,onStatus};
+  ctx.callbacks={onRows,onStatus,onInspect};
   ctx.ifc=ifc;
   ctx.positions=V().parsePlacementCoordinates(ifcBuffer,ifc.elements);
   selectionTypeChoices();
@@ -204,7 +238,8 @@ async function openAnalysis({pdfBuffer,ifcBuffer,ifc,onRows,onStatus}){
   scope.pdfjsLib.GlobalWorkerOptions.workerSrc=
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   ctx.pdf=await scope.pdfjsLib.getDocument({
-    data:new Uint8Array(pdfBuffer),isEvalSupported:false
+    // Independent copy prevents PDF.js worker ownership from detaching the source.
+    data:new Uint8Array(pdfBuffer.slice(0)),isEvalSupported:false
   }).promise;
   const pages=$("visual-page");pages.replaceChildren();
   for(let n=1;n<=ctx.pdf.numPages;n++){
@@ -222,6 +257,7 @@ function submitProposals(){
     },{type}
   );
   ctx.lastRows=rows;
+  renderMarkers();
   $("clear-visual-rows").disabled=rows.length===0;
   $("add-missing").disabled=false;
   ctx.callbacks?.onRows?.(rows);
@@ -230,9 +266,34 @@ function submitProposals(){
     :"Geen platen kregen een eenduidige kleur. Controleer kalibratie, kleurlegenda en IFC-objecttype.",
     rows.length?"ok":"error");
 }
+
+async function highlightMatch(row){
+  if(!ctx.pdf)return "PDF is niet geladen.";
+  const pageNo=Number(row.page||1);
+  if(pageNo!==ctx.page && pageNo>=1 && pageNo<=ctx.pdf.numPages){
+    $("visual-page").value=String(pageNo);
+    await showPage(pageNo,{preserveMatches:true});
+  }
+  let x=null,y=null;
+  if(Number.isFinite(row.pdfPixelX) && Number.isFinite(row.pdfPixelY)){
+    x=row.pdfPixelX;y=row.pdfPixelY;
+  }else if(Number.isFinite(row.pdfX) && Number.isFinite(row.pdfY) && ctx.viewport){
+    const pt=ctx.viewport.convertToViewportPoint(row.pdfX,row.pdfY);
+    x=pt[0];y=pt[1];
+  }
+  ctx.highlight=x!==null ? {x,y,page:pageNo,guid:row.guid} : null;
+  renderMarkers();
+  if(x!==null){
+    const wrap=$("pdf-wrap");
+    wrap.scrollIntoView({block:"nearest",behavior:"smooth"});
+    return "PDF-locatie blauw omcirkeld op pagina "+pageNo+".";
+  }
+  return "PDF-pagina "+pageNo+" geopend; voor deze match is geen precieze PDF-positie beschikbaar.";
+}
+
 function reset(){
   ctx.image=null;ctx.ready=false;ctx.calibration=[];ctx.positions=[];ctx.lastRows=[];
-  ctx.legend=[];ctx.mode="";ctx.reversed=false;
+  ctx.legend=[];ctx.mode="";ctx.reversed=false;ctx.highlight=null;ctx.viewport=null;
   $("visual-section").hidden=true;
   $("legend-verified").checked=false;
   $("create-visual-rows").disabled=true;
@@ -298,5 +359,5 @@ $("clear-visual-rows").addEventListener("click",()=>{
   $("add-missing").disabled=true;
   visualStatus("Visuele voorstellen gewist. De tekstmatching blijft behouden.","ok");
 });
-scope.TrimbleVisualUI={openAnalysis,reset};
+scope.TrimbleVisualUI={openAnalysis,reset,highlightMatch};
 })(typeof window!=="undefined"?window:globalThis);

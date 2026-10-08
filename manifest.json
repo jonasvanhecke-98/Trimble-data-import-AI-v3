@@ -1,9 +1,11 @@
-
 {
   "url": "https://jonasvanhecke-98.github.io/Trimble-data-import-AI-v3/",
   "title": "Trimble Data Import AI",
   "icon": "https://jonasvanhecke-98.github.io/Trimble-data-import-AI-v3/icon.svg",
-  "description": "Gratis IFC- en PDF-analyse met tekst- en kleurherkenning in Trimble Connect",
-  "extensionType": ["project", "3dviewer"],
+  "description": "Gratis gecombineerde IFC/PDF-tekst- en kleuranalyse in Trimble Connect",
+  "extensionType": [
+    "project",
+    "3dviewer"
+  ],
   "enabled": true
 }

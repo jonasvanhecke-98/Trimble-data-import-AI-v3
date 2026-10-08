@@ -79,3 +79,14 @@ color:#175c94;padding:10px 14px;font-size:14px;font-weight:700}
 hr{border:0;border-top:1px solid #dee6ef;margin:20px 0}
 [hidden]{display:none!important}
 @media(max-width:760px){.visual-layout{grid-template-columns:1fr}}
+
+
+.viewer-model-panel{background:#edf5fa;border:1px solid #c6ddea;border-radius:10px;padding:13px;margin:15px 0}
+.viewer-model-panel select{flex:1;min-width:180px;padding:10px;border:1px solid #b6cee3;border-radius:7px;font:inherit;background:#fff}
+.viewer-model-panel .toolbar{margin:9px 0}
+.viewer-model-panel .micro{margin:8px 0 0}
+h3{font-size:1rem}
+td.visual-check{min-width:180px}
+td.visual-check button{white-space:normal;font-size:12px;padding:8px 10px}
+tr.selected-match{outline:2px solid #1874b5;outline-offset:-2px;background:#e7f4ff}
+tr:has(button:focus-visible){outline:2px solid #1874b5}
